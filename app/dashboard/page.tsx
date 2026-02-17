@@ -25,33 +25,66 @@ export default function Dashboard() {
     if (!error && data) setBookmarks(data);
   };
 
+  // Realtime subscription
   useEffect(() => {
-    fetchBookmarks();
-  }, []);
+  fetchBookmarks();
 
-  // 🔹 Add bookmark
-  const addBookmark = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const channel = supabase
+    .channel("realtime-bookmarks")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "bookmarks" },
+      (payload) => {
+        setBookmarks((prev) => [payload.new as Bookmark, ...prev]);
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "bookmarks" },
+      (payload) => {
+        setBookmarks((prev) =>
+          prev.filter((bm) => bm.id !== payload.old.id)
+        );
+      }
+    )
+    .subscribe();
 
-    if (!user) return;
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
 
-    await supabase.from("bookmarks").insert({
+  //  Add bookmark 
+const addBookmark = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return;
+
+  const { data, error } = await supabase
+    .from("bookmarks")
+    .insert({
       title,
       url,
-      user_id: user.id, // VERY IMPORTANT (RLS depends on this)
-    });
+      user_id: user.id,
+    })
+    .select()
+    .single();
 
-    setTitle("");
-    setUrl("");
-    fetchBookmarks();
-  };
+  if (error) return;
+
+  // 🔥 instantly update current tab UI
+  setBookmarks((prev) => [data as Bookmark, ...prev]);
+
+  setTitle("");
+  setUrl("");
+};
+
 
   // 🔹 Delete bookmark
   const deleteBookmark = async (id: string) => {
     await supabase.from("bookmarks").delete().eq("id", id);
-    fetchBookmarks();
   };
 
   return (
