@@ -26,7 +26,9 @@ export default function Dashboard() {
   };
 
   // Realtime subscription
-  useEffect(() => {
+useEffect(() => {
+  let channel: ReturnType<typeof supabase.channel> | null = null;
+
   const setupRealtime = async () => {
     // 🔐 ensure session is loaded first
     const {
@@ -36,35 +38,41 @@ export default function Dashboard() {
     if (!session) return;
 
     // fetch initial data
-    fetchBookmarks();
+    await fetchBookmarks();
 
-    const channel = supabase
+    channel = supabase
       .channel("realtime-bookmarks")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "bookmarks" },
+        { event: "INSERT", schema: "public", table: "bookmarks" },
         (payload) => {
-          console.log("Realtime event:", payload);
-
-          if (payload.eventType === "INSERT") {
-            setBookmarks((prev) => [payload.new as Bookmark, ...prev]);
-          }
-
-          if (payload.eventType === "DELETE") {
-            setBookmarks((prev) =>
-              prev.filter((bm) => bm.id !== payload.old.id)
-            );
-          }
+          setBookmarks((prev) => {
+            const exists = prev.some((bm) => bm.id === payload.new.id);
+            if (exists) return prev; // prevent duplicates
+            return [payload.new as Bookmark, ...prev];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "bookmarks" },
+        (payload) => {
+          setBookmarks((prev) =>
+            prev.filter((bm) => bm.id !== payload.old.id)
+          );
         }
       )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   };
 
   setupRealtime();
+
+  // 🔥 proper cleanup (VERY IMPORTANT)
+  return () => {
+    if (channel) {
+      supabase.removeChannel(channel);
+    }
+  };
 }, []);
 
   //  Add bookmark 
