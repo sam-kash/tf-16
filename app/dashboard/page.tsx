@@ -1,0 +1,102 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+
+type Bookmark = {
+  id: string;
+  title: string;
+  url: string;
+  user_id: string;
+};
+
+export default function Dashboard() {
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+
+  // 🔹 Fetch bookmarks
+  const fetchBookmarks = async () => {
+    const { data, error } = await supabase
+      .from("bookmarks")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (!error && data) setBookmarks(data);
+  };
+
+  useEffect(() => {
+    fetchBookmarks();
+  }, []);
+
+  // 🔹 Add bookmark
+  const addBookmark = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    await supabase.from("bookmarks").insert({
+      title,
+      url,
+      user_id: user.id, // VERY IMPORTANT (RLS depends on this)
+    });
+
+    setTitle("");
+    setUrl("");
+    fetchBookmarks();
+  };
+
+  // 🔹 Delete bookmark
+  const deleteBookmark = async (id: string) => {
+    await supabase.from("bookmarks").delete().eq("id", id);
+    fetchBookmarks();
+  };
+
+  return (
+    <div className="p-10 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">My Bookmarks</h1>
+
+      <div className="flex gap-2 mb-6">
+        <input
+          placeholder="Title"
+          className="border p-2 flex-1"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <input
+          placeholder="URL"
+          className="border p-2 flex-1"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <button
+          onClick={addBookmark}
+          className="bg-black text-white px-4"
+        >
+          Add
+        </button>
+      </div>
+
+      <ul className="space-y-3">
+        {bookmarks.map((bm) => (
+          <li key={bm.id} className="border p-3 flex justify-between">
+            <div>
+              <p className="font-semibold">{bm.title}</p>
+              <a href={bm.url} className="text-blue-500" target="_blank">
+                {bm.url}
+              </a>
+            </div>
+            <button
+              onClick={() => deleteBookmark(bm.id)}
+              className="text-red-500"
+            >
+              Delete
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
