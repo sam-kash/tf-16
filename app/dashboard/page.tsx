@@ -26,31 +26,52 @@ export default function Dashboard() {
   };
 
   // Realtime subscription
-  useEffect(() => {
-  fetchBookmarks();
+useEffect(() => {
+  let channel: ReturnType<typeof supabase.channel> | null = null;
 
-  const channel = supabase
-    .channel("realtime-bookmarks")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "bookmarks" },
-      (payload) => {
-        setBookmarks((prev) => [payload.new as Bookmark, ...prev]);
-      }
-    )
-    .on(
-      "postgres_changes",
-      { event: "DELETE", schema: "public", table: "bookmarks" },
-      (payload) => {
-        setBookmarks((prev) =>
-          prev.filter((bm) => bm.id !== payload.old.id)
-        );
-      }
-    )
-    .subscribe();
+  const setupRealtime = async () => {
+    // 🔐 ensure session is loaded first
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
+    if (!session) return;
+
+    // fetch initial data
+    await fetchBookmarks();
+
+    channel = supabase
+      .channel("realtime-bookmarks")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "bookmarks" },
+        (payload) => {
+          setBookmarks((prev) => {
+            const exists = prev.some((bm) => bm.id === payload.new.id);
+            if (exists) return prev; // prevent duplicates
+            return [payload.new as Bookmark, ...prev];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "bookmarks" },
+        (payload) => {
+          setBookmarks((prev) =>
+            prev.filter((bm) => bm.id !== payload.old.id)
+          );
+        }
+      )
+      .subscribe();
+  };
+
+  setupRealtime();
+
+  // 🔥 proper cleanup (VERY IMPORTANT)
   return () => {
-    supabase.removeChannel(channel);
+    if (channel) {
+      supabase.removeChannel(channel);
+    }
   };
 }, []);
 
@@ -62,20 +83,11 @@ const addBookmark = async () => {
 
   if (!user) return;
 
-  const { data, error } = await supabase
-    .from("bookmarks")
-    .insert({
-      title,
-      url,
-      user_id: user.id,
-    })
-    .select()
-    .single();
-
-  if (error) return;
-
-  // 🔥 instantly update current tab UI
-  setBookmarks((prev) => [data as Bookmark, ...prev]);
+  await supabase.from("bookmarks").insert({
+    title,
+    url,
+    user_id: user.id,
+  });
 
   setTitle("");
   setUrl("");
