@@ -83,20 +83,11 @@ const addBookmark = async () => {
 
   if (!user) return;
 
-  const { data, error } = await supabase
-    .from("bookmarks")
-    .insert({
-      title,
-      url,
-      user_id: user.id,
-    })
-    .select()
-    .single();
-
-  if (error) return;
-
-  // 🔥 instantly update current tab UI
-  setBookmarks((prev) => [data as Bookmark, ...prev]);
+  await supabase.from("bookmarks").insert({
+    title,
+    url,
+    user_id: user.id,
+  });
 
   setTitle("");
   setUrl("");
