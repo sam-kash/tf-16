@@ -27,31 +27,44 @@ export default function Dashboard() {
 
   // Realtime subscription
   useEffect(() => {
-  fetchBookmarks();
+  const setupRealtime = async () => {
+    // 🔐 ensure session is loaded first
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-  const channel = supabase
-    .channel("realtime-bookmarks")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "bookmarks" },
-      (payload) => {
-        setBookmarks((prev) => [payload.new as Bookmark, ...prev]);
-      }
-    )
-    .on(
-      "postgres_changes",
-      { event: "DELETE", schema: "public", table: "bookmarks" },
-      (payload) => {
-        setBookmarks((prev) =>
-          prev.filter((bm) => bm.id !== payload.old.id)
-        );
-      }
-    )
-    .subscribe();
+    if (!session) return;
 
-  return () => {
-    supabase.removeChannel(channel);
+    // fetch initial data
+    fetchBookmarks();
+
+    const channel = supabase
+      .channel("realtime-bookmarks")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bookmarks" },
+        (payload) => {
+          console.log("Realtime event:", payload);
+
+          if (payload.eventType === "INSERT") {
+            setBookmarks((prev) => [payload.new as Bookmark, ...prev]);
+          }
+
+          if (payload.eventType === "DELETE") {
+            setBookmarks((prev) =>
+              prev.filter((bm) => bm.id !== payload.old.id)
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   };
+
+  setupRealtime();
 }, []);
 
   //  Add bookmark 
